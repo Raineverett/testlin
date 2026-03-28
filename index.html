@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>聽寫練習</title>
+    <style>
+        :root { --primary-color: #3498db; --success-color: #2ecc71; --dark-color: #2c3e50; }
+        body { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; background: #f4f7f9; margin: 0; padding: 20px; color: var(--dark-color); line-height: 1.6; }
+        .container { max-width: 900px; margin: 0 auto 100px auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        
+        header { border-bottom: 4px solid var(--primary-color); margin-bottom: 30px; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 24px; color: var(--dark-color); }
+
+        /* 題目列樣式 */
+        .quiz-row { display: flex; flex-direction: column; padding: 25px 0; border-bottom: 1px solid #eee; position: relative; }
+        .quiz-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        .quiz-num { font-size: 22px; font-weight: bold; color: #95a5a6; width: 40px; }
+        
+        /* 播放按鈕 */
+        .btn-play { background: var(--success-color); color: white; border: none; padding: 12px 25px; cursor: pointer; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 3px 0 #27ae60; transition: 0.1s; display: flex; align-items: center; gap: 8px; }
+        .btn-play:active { transform: translateY(3px); box-shadow: none; }
+
+        /* 輸入框 */
+        .input-group { width: 100%; }
+        input { width: 100%; max-width: 500px; padding: 15px; font-size: 26px; border: 2px solid #ddd; border-radius: 10px; box-sizing: border-box; outline: none; transition: border-color 0.3s; }
+        input:focus { border-color: var(--primary-color); background: #faffff; }
+
+        /* 答案區 (萌典圖片) */
+        .answer-area { display: none; margin-top: 20px; padding: 20px; background: #fffcf0; border: 1px dashed #f1c40f; border-radius: 10px; }
+        .show-all .answer-area { display: flex; flex-wrap: wrap; gap: 10px; animation: slideDown 0.4s ease-out; }
+        .moe-char-img { width: 90px; height: 90px; border: 1px solid #ddd; background: white; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+
+        /* 底部控制欄 */
+        .controls { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.95); padding: 15px; border-top: 2px solid #ddd; display: flex; justify-content: center; backdrop-filter: blur(10px); }
+        .btn-check-all { background: var(--dark-color); color: white; border: none; padding: 15px 40px; cursor: pointer; border-radius: 10px; font-size: 20px; font-weight: bold; width: 100%; max-width: 400px; transition: 0.3s; }
+        .btn-check-all:hover { background: #34495e; }
+
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 手機版微調 */
+        @media (max-width: 600px) {
+            .moe-char-img { width: 65px; height: 65px; }
+            input { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🎤 小記者聽寫練習卷 (25題)</h1>
+    </header>
+    
+    <div id="quiz-list">
+        </div>
+</div>
+
+<div class="controls">
+    <button class="btn-check-all" onclick="document.body.classList.toggle('show-all')">👁️ 顯示 / 隱藏 全頁正確答案</button>
+</div>
+
+<script src="data.js"></script>
+<script>
+    const quizList = document.getElementById('quiz-list');
+
+    // 初始化頁面
+    function init() {
+        if (typeof vocabData === 'undefined') {
+            quizList.innerHTML = "<p style='color:red;'>錯誤：找不到 data.js 檔案內容。</p>";
+            return;
+        }
+
+        vocabData.forEach((item, index) => {
+            const row = document.createElement('div');
+            row.className = 'quiz-row';
+            
+            // 預產生萌典圖片路徑 (直接引用圖片避開 CORS)
+            let imgHtml = "";
+            for (let char of item.word) {
+                if (" ，！?。".includes(char)) continue;
+                const encodedChar = encodeURIComponent(char);
+                imgHtml += `<img class="moe-char-img" src="https://www.moedict.tw/${encodedChar}.png" alt="${char}" loading="lazy">`;
+            }
+
+            row.innerHTML = `
+                <div class="quiz-header">
+                    <span class="quiz-num">${index + 1}.</span>
+                    <button class="btn-play" onclick="playTTS('${item.word}')"><span>🔊</span> 聽發音</button>
+                </div>
+                <div class="input-group">
+                    <input type="text" placeholder="請輸入國字" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="answer-area">
+                    ${imgHtml}
+                </div>
+            `;
+            quizList.appendChild(row);
+        });
+    }
+
+    // 跨平台發音核心函數
+    function playTTS(text) {
+        // 先嘗試使用 Web Speech API (系統內建語音，iOS/Android/Win11 支援度高)
+        if ('speechSynthesis' in window) {
+            // 停止當前所有發音
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-TW';
+            utterance.rate = 0.85; // 語速稍微放慢，適合練習
+            utterance.pitch = 1.0;
+
+            // iOS 必須在使用者點擊後立即調用 speak
+            window.speechSynthesis.speak(utterance);
+        } else {
+            // 備援方案：Google TTS
+            const audio = new Audio(`https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-TW&client=tw-ob`);
+            audio.play().catch(e => alert("發音受限，請確認手機已關閉靜音模式並點擊螢幕互動。"));
+        }
+    }
+
+    window.onload = init;
+</script>
+
+</body>
+</html>
